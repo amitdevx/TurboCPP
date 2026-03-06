@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run DOSBox Config Test
+      run: bash tests/test_dosbox_config.sh
+    
+    - name: Run Start Script Test
+      run: bash tests/test_start_script.sh
+    
+    - name: Run Start.bat Test
+      run: bash tests/test_start_bat.sh
+    
+    - name: Run TC Structure Test
+      run: bash tests/test_tc_structure.sh
+    
+    - name: Run .gitignore Test
+      run: bash tests/test_gitignore.sh
+    
+    - name: Test Summary
+      if: success()
+      run: echo "✅ All tests passed successfully!"

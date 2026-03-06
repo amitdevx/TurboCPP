@@ -15,30 +15,61 @@ System Requirements
   - **Arch**: `sudo pacman -S dosbox`
   - **Windows**: Download installer from https://www.dosbox.com/download.php
 
-Download and Instructions
-=========================
-- Download latest version of TurboCPP from [here](https://github.com/AvinashReddy3108/TurboCPP4Linux/archive/refs/heads/master.zip)
+Installation & Quick Start
+===========================
+- Download latest version of TurboCPP from [Releases](../../releases)
 - Extract the zip file anywhere you like
 
 ### Linux
-- Open a terminal in that folder and run:
-  ```bash
-  chmod +x start.sh
-  ./start.sh
-  ```
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 ### Windows
-- Double-click `start.bat` (DOSBox must be installed first).
+Double-click `start.bat` (DOSBox must be installed first).
 
-Performance Note
-================
-A project-local `dosbox-turbo.conf` is included to keep CPU usage reasonable.
-If Turbo C++ feels slow during compilation, edit `dosbox-turbo.conf` and raise the `cycles` value (e.g. `cycles=5000`).
+Performance Optimization
+========================
+This project includes CPU cycle optimization via `dosbox-turbo.conf`:
+- **Default cycles**: 3000 (responsive without high CPU usage)
+- **To increase speed**: Edit `dosbox-turbo.conf` and set `cycles=5000` or higher
+- **For laptops**: Set `cycles=1000` for better battery life
+
+Testing
+=======
+Run the test suite:
+```bash
+bash tests/test_dosbox_config.sh
+bash tests/test_start_script.sh
+bash tests/test_start_bat.sh
+bash tests/test_tc_structure.sh
+bash tests/test_gitignore.sh
+```
+
+Or use GitHub Actions (automated on every push):
+- See [`.github/workflows/tests.yml`](.github/workflows/tests.yml)
+
+About This Fork
+===============
+**Maintained by**: [Amit Divekar](https://github.com/amitdevx)  
+**Profile**: https://github.com/amitdevx  
+**Location**: Mumbai, India  
+**Bio**: Full-Stack Developer building with Next.js, TypeScript, DevOps, CI/CD, and Cloud.
+
+**Improvements in this version**:
+- ✅ CPU optimization (DOSBox cycles capping at 3000)
+- ✅ Cross-platform support (Windows batch launcher)
+- ✅ Fixed mount path quoting (handles spaces in directory names)
+- ✅ Comprehensive test suite
+- ✅ CI/CD pipeline with GitHub Actions
 
 Credits
 =======
-- Huge thanks to [@vineetchoudhary](https://github.com/vineetchoudhary) for the TurboCPP files.
+- Original project: [AvinashReddy3108/TurboCPP4Linux](https://github.com/AvinashReddy3108/TurboCPP4Linux)
+- Windows port inspiration: [vineetchoudhary](https://github.com/vineetchoudhary)
+- Original TC++ IDE: Borland International
 
 Issues ?
 ========
-Report them [here](https://github.com/AvinashReddy3108/TurboCPP4Linux/issues)
+Report issues at: [GitHub Issues](../../issues)
