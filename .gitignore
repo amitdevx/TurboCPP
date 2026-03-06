@@ -1,0 +1,16 @@
+# Swap files (inside TC/ and project root)
+TC/**/*.SWP
+*.SWP
+
+# Build artifacts produced by Turbo C++
+NONAME*.EXE
+NONAME*.OBJ
+*.OBJ
+*.EXE
+!TC/BIN/*.EXE
+
+# User's Projects
+TC/Projects/*
+
+# Backup of start.sh
+start.sh.backup
