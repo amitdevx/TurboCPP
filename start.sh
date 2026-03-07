@@ -49,7 +49,7 @@ sys.exit(0 if key else 1)
         echo "  ⚡ TurboCPP AI: Starting AI code assistant..."
         echo "  📝 Write '@ai <prompt>' in any .c/.cpp file to generate code!"
         echo ""
-        python3 "${PWD}/ai/main.py" watch "${PWD}/TC" > "${PWD}/ai/logs/watcher.log" 2>&1 &
+        python3 "${PWD}/ai/main.py" watch "${PWD}" > "${PWD}/ai/logs/watcher.log" 2>&1 &
         AI_PID=$!
         echo "  🤖 AI watcher running (PID: $AI_PID)"
         echo ""

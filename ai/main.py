@@ -144,7 +144,8 @@ def cmd_watch(args):
     cfg = load_config()
     logger = setup_logging(cfg.get("log_level", "INFO"))
 
-    watch_dir = args.directory or os.path.join(PROJECT_ROOT, "TC")
+    # Watch project root — DOSBox mounts it as C:\ and TC editor saves there
+    watch_dir = args.directory or PROJECT_ROOT
     watch_dir = os.path.expanduser(watch_dir)
 
     if not os.path.isdir(watch_dir):
@@ -229,7 +230,7 @@ def cmd_status(args):
     has_key = bool(cfg.get("openrouter_api_key"))
     print(f"  API Key:   {G + '✓ set' if has_key else R + '✗ missing'}{X}")
     print(f"  Model:     {C}{cfg.get('model', 'not set')}{X}")
-    print(f"  Watch Dir: {C}{os.path.join(PROJECT_ROOT, 'TC')}{X}")
+    print(f"  Watch Dir: {C}{PROJECT_ROOT}{X}")
     print(f"  Backup:    {G}{'on' if cfg.get('backup_enabled') else 'off'}{X}")
     print()
 
