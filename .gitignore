@@ -14,3 +14,11 @@ TC/Projects/*
 
 # Backup of start.sh
 start.sh.backup
+
+# TurboCPP AI
+ai/config.json
+ai/logs/
+ai/backups/
+ai/__pycache__/
+ai/src/__pycache__/
+ai/venv/

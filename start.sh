@@ -34,6 +34,34 @@ cat << EOF
 +---------------------------------------------------------------+
 EOF
 
+# ─── TurboCPP AI: Start AI watcher in background ───────────────
+AI_PID=""
+if [ -f "${PWD}/ai/main.py" ] && [ -x "$(command -v python3)" ]; then
+    AI_CONFIG="${PWD}/ai/config.json"
+    # Only start if API key is configured (not empty)
+    if [ -f "$AI_CONFIG" ] && python3 -c "
+import json, sys
+cfg = json.load(open('$AI_CONFIG'))
+key = cfg.get('openrouter_api_key','')
+sys.exit(0 if key else 1)
+" 2>/dev/null; then
+        echo ""
+        echo "  ⚡ TurboCPP AI: Starting AI code assistant..."
+        echo "  📝 Write '@ai <prompt>' in any .c/.cpp file to generate code!"
+        echo ""
+        python3 "${PWD}/ai/main.py" watch "${PWD}/TC" > "${PWD}/ai/logs/watcher.log" 2>&1 &
+        AI_PID=$!
+        echo "  🤖 AI watcher running (PID: $AI_PID)"
+        echo ""
+    else
+        echo ""
+        echo "  💡 TurboCPP AI available but not configured."
+        echo "  Run: python3 ai/main.py setup"
+        echo ""
+    fi
+fi
+# ────────────────────────────────────────────────────────────────
+
 # Use project-local DOSBox config if it exists (CPU/perf optimizations)
 DOSBOX_CONF=""
 if [ -f "${PWD}/dosbox-turbo.conf" ]; then
@@ -46,3 +74,11 @@ dosbox ${DOSBOX_CONF} \
     -c "SET PATH=%PATH%;C:\TC\BIN" \
     -c "C:" \
     -c "TC"
+
+# ─── Cleanup: Stop AI watcher when DOSBox exits ────────────────
+if [ -n "$AI_PID" ] && kill -0 "$AI_PID" 2>/dev/null; then
+    echo "  Stopping AI watcher (PID: $AI_PID)..."
+    kill "$AI_PID" 2>/dev/null
+    wait "$AI_PID" 2>/dev/null
+    echo "  ✓ AI watcher stopped."
+fi
