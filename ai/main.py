@@ -173,7 +173,8 @@ def cmd_watch(args):
         sys.exit(0)
 
     signal.signal(signal.SIGINT, stop)
-    signal.signal(signal.SIGTERM, stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, stop)
 
     try:
         while observer.is_alive():
