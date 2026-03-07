@@ -149,6 +149,8 @@ class OpenRouterProvider:
 
     def _extract_code(self, content: str) -> str:
         """Extract code from markdown code blocks if present."""
+        if not content:
+            return ""
         if "```" in content:
             lines = content.split("\n")
             code_lines, in_block = [], False

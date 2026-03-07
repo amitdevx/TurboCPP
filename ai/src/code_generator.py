@@ -1,41 +1,209 @@
 """
 TurboCPP AI - Code Generator
 TurboCPP-specific prompt engineering and code generation via OpenRouter.
+Includes C89 compliance validation to catch common errors.
 """
 
+import re
 import logging
 from .ai_providers import OpenRouterProvider
 
 logger = logging.getLogger("turbocpp-ai")
 
+
+def validate_c89_compliance(code: str) -> tuple:
+    """
+    Validates code for C89 compliance. Returns (is_valid, errors_list).
+    Catches common C89 violations that Turbo C++ would reject.
+    """
+    errors = []
+    lines = code.split('\n')
+    
+    for i, line in enumerate(lines, 1):
+        line_stripped = line.strip()
+        
+        # Check 1: Variable declaration after statements in a block
+        # This is the MOST COMMON error - detect type declarations not at block start
+        if re.search(r'^\s+(int|char|float|double|long|short|unsigned|struct|void\s*\*)\s+\w+\s*[=;]', line):
+            # Check if there were non-declaration statements before in this block
+            # Look backwards to find the block start (opening brace)
+            block_start = None
+            brace_depth = 0
+            for j in range(i-1, -1, -1):
+                if '{' in lines[j]:
+                    block_start = j + 1
+                    break
+            
+            if block_start is not None and block_start < i - 1:
+                # Check if there are statements between block start and this declaration
+                has_statement_before = False
+                for k in range(block_start, i-1):
+                    stmt = lines[k].strip()
+                    if stmt and not stmt.startswith('/*') and not stmt.startswith('*') and not stmt.endswith('*/'):
+                        # It's a statement, not a comment
+                        if not re.match(r'^(int|char|float|double|long|short|unsigned|struct|typedef|void)', stmt):
+                            # Found a non-declaration statement before this declaration
+                            has_statement_before = True
+                            break
+                
+                if has_statement_before:
+                    errors.append(f"Line {i}: Declaration after statements (C89 violation) - '{line_stripped[:50]}'")
+        
+        # Check 2: for loop with declaration inside
+        if re.search(r'for\s*\(\s*(int|char|float|double|long|short|unsigned)\s+\w+', line):
+            errors.append(f"Line {i}: Loop variable declared in for() - C99+ only - '{line_stripped[:50]}'")
+        
+        # Check 3: // comments (C99+)
+        if '//' in line and not line.strip().startswith('/*'):
+            # Make sure it's not in a string
+            if '"' not in line or line.index('//') < line.index('"'):
+                errors.append(f"Line {i}: Single-line // comment not allowed (use /* */)")
+        
+        # Check 4: bool type (not in C89)
+        if re.search(r'\b(bool|true|false)\b', line) and '#include' not in line:
+            errors.append(f"Line {i}: bool/true/false not in C89 (use int with 1/0)")
+        
+        # Check 5: int main() with return (should be void main())
+        if re.search(r'int\s+main\s*\(', line):
+            errors.append(f"Line {i}: Use 'void main()' for Turbo C++, not 'int main()'")
+    
+    return (len(errors) == 0, errors)
+
+
+def fix_c89_violations(code: str) -> str:
+    """
+    Attempts to automatically fix common C89 violations.
+    Moves declarations to the top of blocks.
+    """
+    lines = code.split('\n')
+    fixed_lines = []
+    current_block_decls = []
+    in_function = False
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        line_stripped = line.strip()
+        
+        # Detect function start
+        if re.match(r'(void|int)\s+\w+\s*\([^)]*\)\s*{', line_stripped):
+            in_function = True
+            fixed_lines.append(line)
+            current_block_decls = []
+            i += 1
+            
+            # Collect all declarations at the top of the block
+            j = i
+            while j < len(lines):
+                next_line = lines[j].strip()
+                
+                # If it's a declaration, collect it
+                if re.match(r'^(int|char|float|double|long|short|unsigned|struct)\s+\w+', next_line):
+                    current_block_decls.append(lines[j])
+                    j += 1
+                # If it's a non-declaration, stop collecting
+                elif next_line and not next_line.startswith('/*') and not next_line.startswith('*'):
+                    break
+                else:
+                    j += 1
+            
+            # Output all collected declarations
+            for decl in current_block_decls:
+                fixed_lines.append(decl)
+            
+            i = j
+            continue
+        
+        fixed_lines.append(line)
+        i += 1
+    
+    return '\n'.join(fixed_lines)
+
+
 TURBOCPP_SYSTEM_PROMPT = """You are a Turbo C++ code generation assistant for Borland Turbo C++ 3.0 (1992).
 You MUST generate code that compiles EXACTLY as written in Turbo C++ 3.0 on DOSBox.
+
+═══════════════════════════════════════════════════════════════
+🚨 CRITICAL ERROR TO AVOID 🚨
+═══════════════════════════════════════════════════════════════
+
+THIS IS THE #1 ERROR IN TURBO C++:
+"Declaration is not allowed here"
+
+CAUSE: Variable declared AFTER statements in a block.
+
+TURBO C++ REJECTS:
+    printf("hello");
+    int x = 5;        /* ❌ ERROR: Declaration after statement! */
+
+TURBO C++ REQUIRES:
+    int x;            /* ✅ Declaration at top */
+    
+    printf("hello");
+    x = 5;            /* ✅ Assignment after declarations */
 
 ═══════════════════════════════════════════════════════════════
 CRITICAL: C89/ANSI C RULES (1989 standard) - NO MODERN C/C++!
 ═══════════════════════════════════════════════════════════════
 
-1. VARIABLE DECLARATIONS:
-   ✓ ALL variables MUST be declared at the TOP of each block/function
-   ✗ NEVER declare variables in the middle of code
+1. VARIABLE DECLARATIONS - MOST IMPORTANT RULE:
+   ✓ ALL variables MUST be declared at the VERY TOP of each block/function
+   ✓ ALL declarations BEFORE ANY statements (printf, scanf, if, for, etc.)
+   ✗ NEVER declare variables after ANY executable statement
    ✗ NEVER use mixed declarations and statements
+   ✗ NEVER declare inside a case: block without extra braces
    
-   CORRECT:
+   CORRECT PATTERN (ALWAYS USE THIS):
    void main() {
-       int i, sum;
-       float avg;
-       char name[50];
+       /* Step 1: ALL DECLARATIONS FIRST - nothing else! */
+       int i, sum, count;
+       float avg, result;
+       char name[50], choice;
+       Node *ptr, *temp;
        
+       /* Step 2: NOW executable statements */
        clrscr();
        sum = 0;
-       for(i=0; i<10; i++) { ... }
+       printf("Enter name: ");
+       scanf("%s", name);
+       
+       for(i=0; i<10; i++) {
+           /* ... */
+       }
    }
    
-   WRONG:
+   WRONG PATTERNS (WILL CAUSE ERRORS):
    void main() {
-       clrscr();
-       int i = 0;        /* ERROR: not at top! */
+       clrscr();               /* Statement */
+       int i = 0;              /* ❌ ERROR: Declaration after statement! */
+       
        printf("...");
+       float avg = 0.0;        /* ❌ ERROR: Declaration in middle! */
+       
+       scanf("%d", &num);
+       Node *result = search(); /* ❌ ERROR: Common mistake! */
+   }
+   
+   NESTED BLOCKS - SAME RULE:
+   if(condition) {
+       int x, y;    /* ✅ At top of block */
+       
+       x = 5;       /* ✅ Statements after */
+       printf("%d", x);
+   }
+   
+   SWITCH CASE - BE CAREFUL:
+   switch(choice) {
+       case 1: {
+           int x;         /* ✅ Need braces + declaration at top */
+           x = 10;
+           break;
+       }
+       case 2:
+           printf("...");
+           int y = 5;     /* ❌ ERROR: Can't declare without braces! */
+   }
+
        float avg = 0.0;  /* ERROR: in middle! */
    }
 
@@ -275,7 +443,27 @@ class CodeGenerator:
     def generate_full_program(self, user_prompt: str) -> str:
         logger.info(f"Generating full program: {user_prompt[:80]}...")
         code = self.provider.generate_code(FULL_PROGRAM_PREFIX + user_prompt, TURBOCPP_SYSTEM_PROMPT)
-        return self._clean(code)
+        code = self._clean(code)
+        
+        # Validate and fix C89 compliance
+        is_valid, errors = validate_c89_compliance(code)
+        if not is_valid:
+            logger.warning(f"C89 violations detected: {errors}")
+            logger.info("Attempting to auto-fix C89 violations...")
+            code = fix_c89_violations(code)
+            
+            # Re-validate
+            is_valid, errors = validate_c89_compliance(code)
+            if not is_valid:
+                logger.error(f"C89 violations remain after fix: {errors}")
+                # Add comment about violations
+                error_comment = "\n/* WARNING: C89 compliance issues detected:\n"
+                for err in errors[:3]:  # Show first 3 errors
+                    error_comment += f" * {err}\n"
+                error_comment += " * Fix: Move ALL variable declarations to top of blocks.\n */\n\n"
+                code = error_comment + code
+        
+        return code
 
     def generate_snippet(self, user_prompt: str, file_content: str) -> str:
         context_prompt = (
@@ -285,7 +473,15 @@ class CodeGenerator:
         )
         logger.info(f"Generating snippet: {user_prompt[:80]}...")
         code = self.provider.generate_code(context_prompt, TURBOCPP_SYSTEM_PROMPT)
-        return self._clean(code)
+        code = self._clean(code)
+        
+        # Validate C89 compliance
+        is_valid, errors = validate_c89_compliance(code)
+        if not is_valid:
+            logger.warning(f"C89 violations in snippet: {errors}")
+            code = fix_c89_violations(code)
+        
+        return code
 
     def _clean(self, code: str) -> str:
         if not code:
