@@ -101,7 +101,11 @@ class OpenRouterProvider:
         if resp.status_code == 200:
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
-            return True, self._extract_code(content)
+            code = self._extract_code(content)
+            # Reject empty responses
+            if not code or len(code.strip()) < 10:
+                return False, f"empty response ({model})"
+            return True, code
         elif resp.status_code == 429:
             return False, f"rate-limited ({model})"
         elif resp.status_code == 404:
@@ -119,8 +123,26 @@ class OpenRouterProvider:
 
             logger.warning(f"Primary model failed: {result}. Trying fallbacks...")
 
-            # Auto-fallback: try other available free models
-            fallback_models = get_free_model_ids()
+            # Priority fallback list based on reliability and speed
+            priority_models = [
+                "stepfun/step-3.5-flash:free",  # Proven working in user logs
+                "qwen/qwen3-4b:free",  # Fast, small
+                "google/gemma-3-12b-it:free",
+                "meta-llama/llama-3.2-3b-instruct:free",
+                "nvidia/nemotron-nano-9b-v2:free",
+            ]
+            
+            # Auto-fallback: try priority models first, then others
+            all_fallbacks = get_free_model_ids()
+            fallback_models = []
+            for model in priority_models:
+                if model in all_fallbacks and model != self.model:
+                    fallback_models.append(model)
+            # Add remaining models
+            for model in all_fallbacks:
+                if model not in fallback_models and model != self.model:
+                    fallback_models.append(model)
+            
             tried = {self.model}
             for fallback in fallback_models:
                 if fallback in tried:
@@ -129,13 +151,14 @@ class OpenRouterProvider:
                 logger.info(f"Trying fallback model: {fallback}")
                 success, result = self._try_generate(fallback, prompt, system_prompt)
                 if success:
-                    logger.info(f"Fallback succeeded with: {fallback}")
+                    logger.info(f"✓ Fallback succeeded with: {fallback}")
                     return result
-                logger.warning(f"Fallback {fallback} failed: {result}")
-                if len(tried) >= self.max_retries + 1:
+                logger.warning(f"✗ Fallback {fallback} failed: {result}")
+                # Try more models before giving up
+                if len(tried) >= 8:  # Try up to 8 models
                     break
 
-            return f"/* ERROR: All models unavailable. Last error: {result} */"
+            return f"/* ERROR: Tried {len(tried)} models, all unavailable. Last error: {result} */"
 
         except requests.exceptions.Timeout:
             logger.error("OpenRouter API timeout (60s)")

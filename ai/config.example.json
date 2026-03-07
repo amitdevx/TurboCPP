@@ -1,6 +1,6 @@
 {
     "openrouter_api_key": "YOUR_OPENROUTER_API_KEY_HERE",
-    "model": "qwen/qwen3-coder:free",
+    "model": "stepfun/step-3.5-flash:free",
     "watch_extensions": [".c", ".cpp", ".h"],
     "backup_enabled": true,
     "log_level": "INFO",
