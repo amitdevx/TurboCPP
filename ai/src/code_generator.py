@@ -13,105 +13,310 @@ logger = logging.getLogger("turbocpp-ai")
 
 def validate_c89_compliance(code: str) -> tuple:
     """
-    Validates code for C89 compliance. Returns (is_valid, errors_list).
-    Catches common C89 violations that Turbo C++ would reject.
+    Validates code for C89/ANSI C compliance for Turbo C++ 3.0.
+    Returns (is_valid, errors_list).
+    
+    CRITICAL: Detects "Declaration is not allowed here" errors.
+    Turbo C++ requires ALL declarations at the top of EVERY block, including:
+    - Function bodies
+    - if/else blocks
+    - while/for/do-while blocks
+    - switch blocks
+    - case blocks (IMPORTANT!)
     """
     errors = []
     lines = code.split('\n')
     
+    # Track block state machine
+    block_states = {}  # {line_num: {'type': 'function/case/if/etc', 'has_statement': bool}}
+    current_blocks = []  # Stack of block start lines
+    in_case_block = False
+    case_start_line = None
+    
     for i, line in enumerate(lines, 1):
         line_stripped = line.strip()
         
-        # Check 1: Variable declaration after statements in a block
-        # This is the MOST COMMON error - detect type declarations not at block start
-        if re.search(r'^\s+(int|char|float|double|long|short|unsigned|struct|void\s*\*)\s+\w+\s*[=;]', line):
-            # Check if there were non-declaration statements before in this block
-            # Look backwards to find the block start (opening brace)
-            block_start = None
-            brace_depth = 0
-            for j in range(i-1, -1, -1):
-                if '{' in lines[j]:
-                    block_start = j + 1
-                    break
-            
-            if block_start is not None and block_start < i - 1:
-                # Check if there are statements between block start and this declaration
-                has_statement_before = False
-                for k in range(block_start, i-1):
-                    stmt = lines[k].strip()
-                    if stmt and not stmt.startswith('/*') and not stmt.startswith('*') and not stmt.endswith('*/'):
-                        # It's a statement, not a comment
-                        if not re.match(r'^(int|char|float|double|long|short|unsigned|struct|typedef|void)', stmt):
-                            # Found a non-declaration statement before this declaration
-                            has_statement_before = True
-                            break
-                
-                if has_statement_before:
-                    errors.append(f"Line {i}: Declaration after statements (C89 violation) - '{line_stripped[:50]}'")
-        
-        # Check 2: for loop with declaration inside
-        if re.search(r'for\s*\(\s*(int|char|float|double|long|short|unsigned)\s+\w+', line):
-            errors.append(f"Line {i}: Loop variable declared in for() - C99+ only - '{line_stripped[:50]}'")
+        # Skip empty lines, preprocessor, and pure comments
+        if not line_stripped or line_stripped.startswith('#'):
+            continue
+        if line_stripped.startswith('/*') or line_stripped.startswith('*') or line_stripped == '*/':
+            continue
         
         # Check 3: // comments (C99+)
         if '//' in line and not line.strip().startswith('/*'):
-            # Make sure it's not in a string
-            if '"' not in line or line.index('//') < line.index('"'):
+            if '"' not in line or ('"' in line and line.index('//') < line.find('"')):
                 errors.append(f"Line {i}: Single-line // comment not allowed (use /* */)")
         
         # Check 4: bool type (not in C89)
         if re.search(r'\b(bool|true|false)\b', line) and '#include' not in line:
             errors.append(f"Line {i}: bool/true/false not in C89 (use int with 1/0)")
         
-        # Check 5: int main() with return (should be void main())
+        # Check 5: int main() 
         if re.search(r'int\s+main\s*\(', line):
             errors.append(f"Line {i}: Use 'void main()' for Turbo C++, not 'int main()'")
+        
+        # Check 2: for loop with declaration inside
+        if re.search(r'for\s*\(\s*(int|char|float|double|long|short|unsigned)\s+\w+', line):
+            errors.append(f"Line {i}: Loop variable declared in for() - C99+ only - '{line_stripped[:60]}'")
+        
+        # Track case blocks (special handling needed)
+        if re.match(r'case\s+.*:', line_stripped) or line_stripped.startswith('default:'):
+            in_case_block = True
+            case_start_line = i
+            current_blocks.append({'line': i, 'type': 'case', 'has_statement': False})
+            continue
+        
+        # Track break/return ending case blocks
+        if in_case_block and (line_stripped == 'break;' or line_stripped.startswith('return')):
+            in_case_block = False
+            if current_blocks and current_blocks[-1]['type'] == 'case':
+                current_blocks.pop()
+        
+        # Track opening braces (function/if/while/for blocks)
+        if '{' in line:
+            # Determine block type
+            block_type = 'block'
+            if 'if' in line or 'else' in line:
+                block_type = 'if'
+            elif 'while' in line:
+                block_type = 'while'
+            elif 'for' in line:
+                block_type = 'for'
+            elif 'switch' in line:
+                block_type = 'switch'
+            elif re.search(r'\w+\s*\([^)]*\)\s*{', line):  # function
+                block_type = 'function'
+            
+            current_blocks.append({'line': i, 'type': block_type, 'has_statement': False})
+        
+        # Track closing braces
+        if '}' in line:
+            if current_blocks:
+                current_blocks.pop()
+        
+        # Detect if this line is a DECLARATION
+        is_declaration = False
+        # Standard C89 types
+        declaration_pattern = r'^(int|char|float|double|long|short|unsigned|signed|struct\s+\w+|typedef)\s+[\w*]+\s*[;=\[]'
+        if re.match(declaration_pattern, line_stripped):
+            is_declaration = True
+        
+        # User-defined types with pointers: TreeNode *foundNode = ...
+        if re.match(r'^[A-Z]\w+\s+\*\w+\s*[;=]', line_stripped):
+            is_declaration = True
+        
+        # Typedef'd types: Node *ptr = ...
+        if re.match(r'^\w+\s+\*\w+\s*=', line_stripped):
+            is_declaration = True
+        
+        # Detect if this line is a STATEMENT (not a declaration)
+        is_statement = False
+        statement_keywords = ['printf', 'scanf', 'clrscr', 'getch', 'free', 'malloc', 
+                             'exit', 'return', 'if', 'while', 'for', 'switch', 
+                             'break', 'continue', 'goto']
+        
+        # Assignment to existing variable (not declaration)
+        if re.match(r'^\w+\s*=', line_stripped) and not is_declaration:
+            is_statement = True
+        
+        # Function calls
+        if any(kw in line_stripped for kw in statement_keywords):
+            is_statement = True
+        
+        # Increment/decrement
+        if re.search(r'\w+\s*(\+\+|--|[\+\-\*/]=)', line_stripped):
+            is_statement = True
+        
+        # Check 1: CRITICAL - Declaration after statement in ANY block
+        if is_declaration and current_blocks:
+            # Check if any current block has seen a statement
+            for block in current_blocks:
+                if block['has_statement']:
+                    block_type = block['type']
+                    errors.append(f"Line {i}: Declaration after statements in {block_type} block (C89 violation) - '{line_stripped[:60]}'")
+                    break
+        
+        # Mark blocks as having seen statements
+        if is_statement and current_blocks:
+            for block in current_blocks:
+                block['has_statement'] = True
     
     return (len(errors) == 0, errors)
 
 
 def fix_c89_violations(code: str) -> str:
     """
-    Attempts to automatically fix common C89 violations.
-    Moves declarations to the top of blocks.
+    Automatically fixes C89 violations by moving declarations to block tops.
+    
+    Handles:
+    1. Function blocks - moves all declarations to function start
+    2. Switch case blocks - moves declarations to case label
+    3. if/else/while/for blocks - moves declarations to block start
+    4. // comments - converts to /* */
+    5. typedef struct pointers - recognizes user-defined types
     """
     lines = code.split('\n')
     fixed_lines = []
-    current_block_decls = []
-    in_function = False
     
+    # First pass: Convert // comments to /* */
+    for i, line in enumerate(lines):
+        if '//' in line and not line.strip().startswith('/*'):
+            # Find the // position
+            comment_pos = line.find('//')
+            before = line[:comment_pos]
+            comment = line[comment_pos+2:].strip()
+            if comment:
+                lines[i] = before + '/* ' + comment + ' */'
+            else:
+                lines[i] = before
+    
+    # Second pass: Fix declarations after statements
     i = 0
     while i < len(lines):
         line = lines[i]
         line_stripped = line.strip()
         
         # Detect function start
-        if re.match(r'(void|int)\s+\w+\s*\([^)]*\)\s*{', line_stripped):
-            in_function = True
+        if re.match(r'(void|int|char|float|double)\s+\w+\s*\([^)]*\)\s*\{', line_stripped):
             fixed_lines.append(line)
-            current_block_decls = []
             i += 1
             
-            # Collect all declarations at the top of the block
-            j = i
-            while j < len(lines):
-                next_line = lines[j].strip()
-                
-                # If it's a declaration, collect it
-                if re.match(r'^(int|char|float|double|long|short|unsigned|struct)\s+\w+', next_line):
-                    current_block_decls.append(lines[j])
-                    j += 1
-                # If it's a non-declaration, stop collecting
-                elif next_line and not next_line.startswith('/*') and not next_line.startswith('*'):
-                    break
-                else:
-                    j += 1
+            # Collect ALL lines in this function
+            function_lines = []
+            declarations = []
+            statements = []
+            brace_depth = 1
             
-            # Output all collected declarations
-            for decl in current_block_decls:
+            while i < len(lines) and brace_depth > 0:
+                func_line = lines[i]
+                func_stripped = func_line.strip()
+                
+                # Track braces
+                brace_depth += func_line.count('{') - func_line.count('}')
+                
+                if brace_depth == 0:
+                    # Closing brace of function
+                    break
+                
+                # Skip empty lines and comments at the start
+                if not func_stripped or func_stripped.startswith('/*') or func_stripped.startswith('*'):
+                    function_lines.append(func_line)
+                    i += 1
+                    continue
+                
+                # Detect declarations (including typedefs like TreeNode *ptr)
+                is_decl = False
+                # Standard types
+                if re.match(r'^(int|char|float|double|long|short|unsigned|signed|struct\s+\w+)\s+[\w*]+\s*[;=\[]', func_stripped):
+                    is_decl = True
+                # User-defined types (TreeNode *ptr, Node *next, etc.)
+                elif re.match(r'^[A-Z]\w+\s+\*\w+\s*[;=]', func_stripped):
+                    is_decl = True
+                elif re.match(r'^\w+\s+\*\w+\s*=', func_stripped):
+                    is_decl = True
+                
+                if is_decl and not statements:
+                    # Declaration at top is fine
+                    declarations.append(func_line)
+                elif is_decl and statements:
+                    # Declaration after statement - needs fixing
+                    # Extract just the declaration part (before =)
+                    if '=' in func_stripped:
+                        # Split into declaration and initialization
+                        match = re.match(r'^(.+?)\s*=\s*(.+);?\s*$', func_stripped)
+                        if match:
+                            decl_part = match.group(1) + ';'
+                            init_part = match.group(2).rstrip(';')
+                            var_name = re.search(r'(\w+)\s*$', match.group(1))
+                            if var_name:
+                                var = var_name.group(1)
+                                # Add declaration to top
+                                indent = len(func_line) - len(func_line.lstrip())
+                                declarations.append(' ' * indent + decl_part)
+                                # Add assignment as statement
+                                statements.append(' ' * indent + var + ' = ' + init_part + ';')
+                    else:
+                        # Just a declaration, move to top
+                        declarations.append(func_line)
+                else:
+                    # It's a statement
+                    statements.append(func_line)
+                
+                i += 1
+            
+            # Output declarations first, then blank line, then statements
+            for decl in declarations:
                 fixed_lines.append(decl)
             
-            i = j
+            if declarations and statements:
+                fixed_lines.append('')  # Blank line after declarations
+            
+            for stmt in statements:
+                fixed_lines.append(stmt)
+            
+            # Add the closing brace
+            if i < len(lines):
+                fixed_lines.append(lines[i])
+                i += 1
+            
+            continue
+        
+        # Handle switch cases specially
+        elif line_stripped.startswith('case ') or line_stripped.startswith('default:'):
+            fixed_lines.append(line)
+            i += 1
+            
+            # Collect lines in this case until break
+            case_declarations = []
+            case_statements = []
+            
+            while i < len(lines):
+                case_line = lines[i]
+                case_stripped = case_line.strip()
+                
+                # End of case
+                if case_stripped == 'break;' or case_stripped.startswith('return') or case_stripped.startswith('case ') or case_stripped.startswith('default:'):
+                    # Output collected declarations, then statements
+                    for decl in case_declarations:
+                        fixed_lines.append(decl)
+                    for stmt in case_statements:
+                        fixed_lines.append(stmt)
+                    
+                    if case_stripped == 'break;' or case_stripped.startswith('return'):
+                        fixed_lines.append(case_line)
+                        i += 1
+                    break
+                
+                # Check if it's a declaration
+                is_case_decl = False
+                if re.match(r'^(int|char|float|double|long|short|unsigned|struct\s+\w+)\s+[\w*]+\s*[;=]', case_stripped):
+                    is_case_decl = True
+                elif re.match(r'^[A-Z]\w+\s+\*\w+\s*[;=]', case_stripped):
+                    is_case_decl = True
+                elif re.match(r'^\w+\s+\*\w+\s*=', case_stripped):
+                    is_case_decl = True
+                
+                if is_case_decl:
+                    # Move to case declarations
+                    if '=' in case_stripped:
+                        # Split declaration and initialization
+                        match = re.match(r'^(.+?)\s*=\s*(.+);?\s*$', case_stripped)
+                        if match:
+                            decl_part = match.group(1) + ';'
+                            init_part = match.group(2).rstrip(';')
+                            var_name = re.search(r'(\w+)\s*$', match.group(1))
+                            if var_name:
+                                var = var_name.group(1)
+                                indent = len(case_line) - len(case_line.lstrip())
+                                case_declarations.append(' ' * indent + decl_part)
+                                case_statements.append(' ' * indent + var + ' = ' + init_part + ';')
+                    else:
+                        case_declarations.append(case_line)
+                else:
+                    case_statements.append(case_line)
+                
+                i += 1
+            
             continue
         
         fixed_lines.append(line)
