@@ -222,6 +222,51 @@ void main()
 - Access to 100+ models including Llama, Gemini, DeepSeek, Qwen — all via one API key
 - Free models: `meta-llama/llama-4-maverick:free`, `google/gemini-2.0-flash-exp:free`, `deepseek/deepseek-chat-v3-0324:free`
 
+### C89/ANSI C Compliance
+
+All AI-generated code strictly follows **C89/ANSI C (1989)** standard for Turbo C++ 3.0 compatibility:
+
+✅ **What the AI generates:**
+- Variables declared at top of each block
+- Loop counters declared before `for()` statement
+- `void main()` (Turbo C++ convention)
+- `/* */` comments only (no `//`)
+- `clrscr()` at start, `getch()` at end
+- Proper `scanf()` with `&` for addresses
+- No C99+ features (no `bool`, no inline declarations, no `//` comments)
+
+❌ **What the AI avoids:**
+- Mixed declarations and statements
+- `for(int i=0; ...)` - C99 only
+- `int main()` with `return 0`
+- `//` single-line comments
+- Modern types (`bool`, `size_t`, `uint8_t`)
+- C99+ features (`inline`, variable-length arrays, designated initializers)
+
+**Example of correct C89 code:**
+```c
+#include <stdio.h>
+#include <conio.h>
+
+void main()
+{
+    int i, sum;      /* All variables at top */
+    int arr[10];
+    
+    clrscr();
+    sum = 0;
+    
+    for(i=0; i<10; i++)  /* i declared above */
+    {
+        scanf("%d", &arr[i]);
+        sum = sum + arr[i];
+    }
+    
+    printf("Sum = %d", sum);
+    getch();
+}
+```
+
 ## Troubleshooting
 
 ### DOSBox not found (Linux)
