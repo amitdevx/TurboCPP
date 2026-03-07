@@ -34,13 +34,13 @@ BACKUP_DIR = os.path.join(AI_DIR, "backups")
 # ANSI colors (no dependency needed)
 R = "\033[91m"; G = "\033[92m"; Y = "\033[93m"; C = "\033[96m"; B = "\033[1m"; X = "\033[0m"
 
-# Fallback models if OpenRouter API is unreachable
+# Fallback models if OpenRouter API is unreachable (based on proven reliability)
 FALLBACK_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",  # Best for complex programs
+    "stepfun/step-3.5-flash:free",  # Fast and reliable
     "google/gemma-3-12b-it:free",
-    "google/gemma-3-27b-it:free",
     "nvidia/nemotron-nano-9b-v2:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen3-coder:free",
+    "qwen/qwen3-4b:free",
     "mistralai/mistral-small-3.1-24b-instruct:free",
 ]
 

@@ -16,7 +16,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
 # Cache for discovered models (avoid repeated API calls)
-_model_cache = {"models": [], "timestamp": 0, "ttl": 300}  # 5 min TTL
+_model_cache = {"models": [], "timestamp": 0, "ttl": 3600}  # 1 hour TTL (was 5 min)
 
 
 def fetch_free_models():
@@ -60,18 +60,23 @@ class OpenRouterProvider:
 
     def __init__(self, config: dict):
         self.api_key = config.get("openrouter_api_key", "")
-        self.model = config.get("model", "google/gemma-3-12b-it:free")
-        self.max_tokens = config.get("max_tokens", 2048)
-        self.temperature = config.get("temperature", 0.3)
-        self.max_retries = config.get("max_retries", 3)
+        self.model = config.get("model", "meta-llama/llama-3.3-70b-instruct:free")
+        self.max_tokens = config.get("max_tokens", 4096)  # Increased default for complex programs
+        self.temperature = config.get("temperature", 0.5)  # Better for complex logic
+        self.timeout = config.get("timeout", 90)  # Increased for complex prompts
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self.api_key.strip())
 
     def get_name(self) -> str:
         return f"OpenRouter ({self.model})"
+    
+    def estimate_tokens(self, prompt: str, system_prompt: str) -> int:
+        """Estimate tokens needed (rough: 1 token ≈ 4 chars)."""
+        total_chars = len(prompt) + len(system_prompt)
+        return total_chars // 4
 
-    def _try_generate(self, model: str, prompt: str, system_prompt: str) -> tuple:
+    def _try_generate(self, model: str, prompt: str, system_prompt: str, max_tokens_override: int = None, temp_override: float = None) -> tuple:
         """Attempt generation with a specific model. Returns (success, result)."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -79,33 +84,50 @@ class OpenRouterProvider:
             "HTTP-Referer": "https://github.com/amitdevx/TurboC-",
             "X-Title": "TurboCPP AI",
         }
+        
+        max_tokens = max_tokens_override or self.max_tokens
+        temperature = temp_override or self.temperature
+        
         payload = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
         }
 
-        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=60)
+        try:
+            resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=self.timeout)
+        except requests.exceptions.Timeout:
+            return False, f"timeout ({model})"
+        except requests.exceptions.ConnectionError:
+            return False, f"connection error ({model})"
+        except Exception as e:
+            return False, f"request error: {e}"
 
         # Some models don't support system prompts — retry with combined user message
         if resp.status_code == 400 and "not enabled" in resp.text.lower():
             payload["messages"] = [
                 {"role": "user", "content": f"{system_prompt}\n\n{prompt}"},
             ]
-            resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=60)
+            try:
+                resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=self.timeout)
+            except Exception:
+                return False, f"system prompt fallback failed ({model})"
 
         if resp.status_code == 200:
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            code = self._extract_code(content)
-            # Reject empty responses
-            if not code or len(code.strip()) < 10:
-                return False, f"empty response ({model})"
-            return True, code
+            try:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                code = self._extract_code(content)
+                # Reject empty or too-short responses (allow tiny snippets)
+                if not code or len(code.strip()) < 5:
+                    return False, f"empty response ({model})"
+                return True, code
+            except (KeyError, IndexError, ValueError) as e:
+                return False, f"invalid response format ({model}): {e}"
         elif resp.status_code == 429:
             return False, f"rate-limited ({model})"
         elif resp.status_code == 404:
@@ -114,10 +136,37 @@ class OpenRouterProvider:
             error_msg = resp.text[:200]
             return False, f"API {resp.status_code}: {error_msg}"
 
-    def generate_code(self, prompt: str, system_prompt: str) -> str:
+    def generate_code(self, prompt: str, system_prompt: str, complexity: str = "medium") -> str:
+        """
+        Generate code with automatic complexity-based token scaling.
+        
+        Args:
+            prompt: User's code generation request
+            system_prompt: System instructions for the AI
+            complexity: "simple", "medium", or "complex" - auto-adjusts max_tokens
+        
+        Returns:
+            Generated code string
+        """
+        # Auto-scale max_tokens based on complexity
+        token_scale = {
+            "simple": self.max_tokens,  # Use configured default
+            "medium": max(self.max_tokens, 4096),  # At least 4096
+            "complex": max(self.max_tokens, 6144),  # At least 6144 for BST, menus, etc.
+        }
+        max_tokens = token_scale.get(complexity, self.max_tokens)
+        
+        # Detect complexity from prompt keywords if not explicitly set
+        if complexity == "medium":
+            complex_keywords = ["menu", "tree", "linked list", "graph", "sorting", "search", 
+                              "operations", "traversal", "recursive", "multiple functions"]
+            if any(kw in prompt.lower() for kw in complex_keywords):
+                max_tokens = token_scale["complex"]
+                logger.info(f"Detected complex prompt, using max_tokens={max_tokens}")
+        
         try:
             # First try the configured model
-            success, result = self._try_generate(self.model, prompt, system_prompt)
+            success, result = self._try_generate(self.model, prompt, system_prompt, max_tokens_override=max_tokens)
             if success:
                 return result
 
@@ -149,7 +198,7 @@ class OpenRouterProvider:
                     continue
                 tried.add(fallback)
                 logger.info(f"Trying fallback model: {fallback}")
-                success, result = self._try_generate(fallback, prompt, system_prompt)
+                success, result = self._try_generate(fallback, prompt, system_prompt, max_tokens_override=max_tokens)
                 if success:
                     logger.info(f"✓ Fallback succeeded with: {fallback}")
                     return result

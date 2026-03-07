@@ -1,9 +1,10 @@
 {
     "openrouter_api_key": "YOUR_OPENROUTER_API_KEY_HERE",
-    "model": "stepfun/step-3.5-flash:free",
+    "model": "meta-llama/llama-3.3-70b-instruct:free",
     "watch_extensions": [".c", ".cpp", ".h"],
     "backup_enabled": true,
     "log_level": "INFO",
-    "max_tokens": 2048,
-    "temperature": 0.3
+    "max_tokens": 4096,
+    "temperature": 0.5,
+    "timeout": 90
 }

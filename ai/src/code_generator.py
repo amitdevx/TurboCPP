@@ -442,7 +442,16 @@ class CodeGenerator:
 
     def generate_full_program(self, user_prompt: str) -> str:
         logger.info(f"Generating full program: {user_prompt[:80]}...")
-        code = self.provider.generate_code(FULL_PROGRAM_PREFIX + user_prompt, TURBOCPP_SYSTEM_PROMPT)
+        
+        # Detect complexity from prompt
+        complexity = "simple"
+        complex_keywords = ["menu", "tree", "linked list", "graph", "sorting", "search tree",
+                           "operations", "traversal", "recursive", "multiple functions", "bst", "binary"]
+        if any(kw in user_prompt.lower() for kw in complex_keywords):
+            complexity = "complex"
+            logger.info(f"Detected complex program request, using extended token limit")
+        
+        code = self.provider.generate_code(FULL_PROGRAM_PREFIX + user_prompt, TURBOCPP_SYSTEM_PROMPT, complexity=complexity)
         code = self._clean(code)
         
         # Validate and fix C89 compliance
