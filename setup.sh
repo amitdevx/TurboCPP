@@ -125,6 +125,17 @@ fi
 # Make start.sh executable
 chmod +x "$PROJECT_DIR/start.sh" 2>/dev/null
 echo -e "  ${G}✓ start.sh made executable${X}"
+
+# Create TURBOC3 symlink (IDE expects C:\TURBOC3\ paths)
+if [ ! -L "$PROJECT_DIR/TURBOC3" ]; then
+    ln -sf TC "$PROJECT_DIR/TURBOC3"
+    echo -e "  ${G}✓ TURBOC3 symlink created${X}"
+else
+    echo -e "  ${G}✓ TURBOC3 symlink already exists${X}"
+fi
+
+# Create SOURCE directory for IDE
+mkdir -p "$PROJECT_DIR/TC/SOURCE"
 echo ""
 
 # ─── Summary ────────────────────────────────────────────────────

@@ -119,7 +119,7 @@ if %errorlevel% equ 0 (
 echo.
 
 REM ─── Step 4: Create AI config and directories ─────────────────
-echo [4/4] Setting up AI configuration...
+echo [4/5] Setting up AI configuration...
 
 if not exist "%PROJECT_DIR%ai\logs" mkdir "%PROJECT_DIR%ai\logs"
 if not exist "%PROJECT_DIR%ai\backups" mkdir "%PROJECT_DIR%ai\backups"
@@ -131,6 +131,24 @@ if not exist "%PROJECT_DIR%ai\config.json" (
     )
 ) else (
     echo   [OK] Config already exists.
+)
+echo.
+
+REM ─── Step 5: Create TURBOC3 directory junction ────────────────
+echo [5/5] Setting up TURBOC3 directory alias...
+if not exist "%PROJECT_DIR%TURBOC3\BIN\TC.EXE" (
+    REM Remove stale placeholder file that git may create for symlinks
+    if exist "%PROJECT_DIR%TURBOC3" del /Q "%PROJECT_DIR%TURBOC3" >nul 2>nul
+    mklink /J "%PROJECT_DIR%TURBOC3" "%PROJECT_DIR%TC" >nul 2>nul
+    if errorlevel 1 (
+        echo   [!!] Could not create TURBOC3 junction.
+        echo   Try: mklink /J "%PROJECT_DIR%TURBOC3" "%PROJECT_DIR%TC"
+        set /a ERRORS+=1
+    ) else (
+        echo   [OK] TURBOC3 directory junction created.
+    )
+) else (
+    echo   [OK] TURBOC3 alias already exists.
 )
 echo.
 

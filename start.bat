@@ -47,6 +47,23 @@ if %errorlevel% neq 0 (
 echo Starting Turbo C++ ...
 echo.
 
+REM ─── Ensure TURBOC3 directory junction exists ──────────────────
+REM The TC IDE expects paths at C:\TURBOC3\. On Linux a symlink is
+REM stored in git; on Windows we need a directory junction instead.
+if not exist "%~dp0TURBOC3\BIN\TC.EXE" (
+    REM Remove stale symlink placeholder file that git may create
+    if exist "%~dp0TURBOC3" del /Q "%~dp0TURBOC3" >nul 2>nul
+    mklink /J "%~dp0TURBOC3" "%~dp0TC" >nul 2>nul
+    if errorlevel 1 (
+        echo   [WARN] Could not create TURBOC3 junction.
+        echo   Try running as Administrator once, or manually run:
+        echo     mklink /J "%~dp0TURBOC3" "%~dp0TC"
+    ) else (
+        echo   [OK] Created TURBOC3 directory junction.
+    )
+)
+REM ───────────────────────────────────────────────────────────────
+
 REM ─── TurboCPP AI: Start AI watcher in background ───────────────
 set "AI_STARTED=0"
 if exist "%~dp0ai\main.py" (
@@ -89,6 +106,7 @@ if defined PYTHON (
 REM ────────────────────────────────────────────────────────────────
 
 REM Use project-local config if it exists
+cd /d "%~dp0"
 set "CONF="
 if exist "%~dp0dosbox-turbo.conf" (
     set "CONF=-conf "%~dp0dosbox-turbo.conf""
