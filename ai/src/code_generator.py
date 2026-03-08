@@ -59,6 +59,13 @@ def validate_c89_compliance(code: str) -> tuple:
         if re.search(r'for\s*\(\s*(int|char|float|double|long|short|unsigned)\s+\w+', line):
             errors.append(f"Line {i}: Loop variable declared in for() - C99+ only - '{line_stripped[:60]}'")
         
+        # Check 6: Array initialization with {0}, {NULL} etc. (problematic in Turbo C++)
+        if re.search(r'\[\s*\w+\s*\]\s*=\s*\{', line_stripped):
+            # Allow simple initializations like int arr[] = {1, 2, 3}; with literal values
+            # But warn about {NULL}, {0} for large arrays
+            if re.search(r'=\s*\{(NULL|0)\s*\}', line_stripped):
+                errors.append(f"Line {i}: Array initialization with {{NULL}} or {{0}} unreliable in Turbo C++ - use loop instead")
+        
         # Track case blocks (special handling needed)
         if re.match(r'case\s+.*:', line_stripped) or line_stripped.startswith('default:'):
             in_case_block = True
@@ -464,6 +471,32 @@ CRITICAL: C89/ANSI C RULES (1989 standard) - NO MODERN C/C++!
    ✗ No stdint.h types (int32_t, uint8_t, etc.)
    ✗ No size_t in user code (use int/long)
    ✓ NULL is defined, use it for pointers
+
+8. ARRAY INITIALIZATION - CRITICAL:
+   ✓ Initialize arrays element-by-element in a loop
+   ✗ NEVER use {0} or {NULL} for large arrays - unreliable in Turbo C++
+   
+   CORRECT (for pointer arrays):
+   struct node *adjList[MAX];
+   int i;
+   for(i=0; i<MAX; i++) {
+       adjList[i] = NULL;
+   }
+   
+   CORRECT (for int arrays):
+   int visited[MAX];
+   int i;
+   for(i=0; i<MAX; i++) {
+       visited[i] = 0;
+   }
+   
+   WRONG (causes bugs/crashes in Turbo C++):
+   struct node *adjList[MAX] = {NULL};  /* ❌ Unreliable! */
+   int visited[MAX] = {0};              /* ❌ Unreliable! */
+   
+   ALLOWED (small literal arrays):
+   int arr[] = {1, 2, 3, 4, 5};        /* ✅ OK for literals */
+   char str[] = "hello";                /* ✅ OK for strings */
 
 ═══════════════════════════════════════════════════════════════
 TURBO C++ SPECIFIC LIBRARIES

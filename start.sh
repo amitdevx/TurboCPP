@@ -69,10 +69,14 @@ if [ -f "${PWD}/dosbox-turbo.conf" ]; then
 fi
 
 # Start DOSBox — quotes around mount path handle spaces in directory names
+# The TC IDE's TCDEF.DPR expects paths at C:\TURBOC3\ (from original installation)
+# We create a TURBOC3 symlink pointing to TC so the IDE finds its files.
+# The IDE must be launched from TURBOC3\BIN to resolve relative paths correctly.
 dosbox ${DOSBOX_CONF} \
     -c "mount C \"${PWD}\"" \
-    -c "SET PATH=%PATH%;C:\TC\BIN" \
+    -c "SET PATH=%PATH%;C:\TURBOC3\BIN" \
     -c "C:" \
+    -c "CD TURBOC3\BIN" \
     -c "TC"
 
 # ─── Cleanup: Stop AI watcher when DOSBox exits ────────────────

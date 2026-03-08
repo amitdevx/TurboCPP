@@ -94,7 +94,7 @@ if exist "%~dp0dosbox-turbo.conf" (
     set "CONF=-conf "%~dp0dosbox-turbo.conf""
 )
 
-"%DOSBOX%" %CONF% -c "mount C \"%~dp0.\"" -c "SET PATH=%%PATH%%;C:\TC\BIN" -c "C:" -c "TC"
+"%DOSBOX%" %CONF% -c "mount C \"%~dp0.\"" -c "SET PATH=%%PATH%%;C:\TURBOC3\BIN" -c "C:" -c "CD TURBOC3\BIN" -c "TC"
 
 REM ─── Cleanup: Stop AI watcher when DOSBox exits ────────────────
 if "%AI_STARTED%"=="1" (
