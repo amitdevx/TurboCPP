@@ -3,6 +3,7 @@ TC/**/*.SWP
 *.SWP
 
 # Build artifacts produced by Turbo C++
+!TC/LIB/*.OBJ    # ← CRITICAL: Allow startup files (must be BEFORE *.OBJ)
 NONAME*.EXE
 NONAME*.OBJ
 *.OBJ
