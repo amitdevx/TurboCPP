@@ -147,7 +147,7 @@ def _in_ignored_dir(filepath, watch_root):
         return True
     parts = rel.replace("\\", "/").split("/")
     # Ignore dot-prefixed hidden directories and explicitly listed ones
-    return any(p in IGNORE_DIRS or (p.startswith(".") and p != ".") for p in parts)
+    return any(p in IGNORE_DIRS or p.startswith(".") for p in parts)
 
 
 class _Handler(FileSystemEventHandler):
