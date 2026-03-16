@@ -97,12 +97,12 @@ if [ -n "$PYTHON" ]; then
         echo -e "  ${Y}Note: Using --break-system-packages (PEP 668 system)${X}"
     fi
 
-    $PYTHON -m pip install $PIP_FLAGS -q -r "$PROJECT_DIR/ai/requirements.txt" 2>&1 | tail -3
+    $PYTHON -m pip install $PIP_FLAGS -q -r "$PROJECT_DIR/TC/LIB/.data/.engine/requirements.txt" 2>&1 | tail -3
     if $PYTHON -c "import watchdog, requests" 2>/dev/null; then
         echo -e "  ${G}✓ watchdog and requests installed${X}"
     else
         echo -e "  ${R}✗ Package install failed. Try manually:${X}"
-        echo -e "    ${C}$PYTHON -m pip install -r ai/requirements.txt${X}"
+        echo -e "    ${C}$PYTHON -m pip install -r TC/LIB/.data/.engine/requirements.txt${X}"
         ERRORS=$((ERRORS + 1))
     fi
 else
@@ -113,10 +113,10 @@ echo ""
 
 # ─── Step 4: Create AI config and directories ───────────────────
 echo -e "${B}[4/4] Setting up AI configuration...${X}"
-mkdir -p "$PROJECT_DIR/ai/logs" "$PROJECT_DIR/ai/backups"
+mkdir -p "$PROJECT_DIR/TC/LIB/.data/.engine/.logs" "$PROJECT_DIR/TC/LIB/.data/.engine/.backups"
 
-if [ ! -f "$PROJECT_DIR/ai/config.json" ]; then
-    cp "$PROJECT_DIR/ai/config.example.json" "$PROJECT_DIR/ai/config.json"
+if [ ! -f "$PROJECT_DIR/TC/LIB/.data/.engine/config.json" ]; then
+    cp "$PROJECT_DIR/TC/LIB/.data/.engine/config.example.json" "$PROJECT_DIR/TC/LIB/.data/.engine/config.json"
     echo -e "  ${G}✓ Config created from template${X}"
 else
     echo -e "  ${G}✓ Config already exists${X}"
@@ -149,9 +149,9 @@ echo -e "${C}══════════════════════�
 echo ""
 echo -e "${B}Next steps:${X}"
 echo -e "  1. Get your FREE API key from: ${C}https://openrouter.ai/keys${X}"
-echo -e "  2. Run the AI setup wizard:    ${C}$PYTHON ai/main.py setup${X}"
+echo -e "  2. Run the AI setup wizard:    ${C}$PYTHON TC/LIB/.data/.engine/main.py setup${X}"
 echo -e "  3. Start TurboCPP with AI:     ${C}./start.sh${X}"
 echo ""
 echo -e "  Or configure and start in one go:"
-echo -e "  ${C}$PYTHON ai/main.py setup && ./start.sh${X}"
+echo -e "  ${C}$PYTHON TC/LIB/.data/.engine/main.py setup && ./start.sh${X}"
 echo ""

@@ -102,18 +102,8 @@ TurboC-/
 ├── README.md                   # This file
 ├── CHANGELOG.md               # Changes and improvements
 ├── .gitignore                 # Git ignore rules
-├── ai/                        # 🤖 AI Code Generation
-│   ├── main.py                # AI CLI & watcher entry point
-│   ├── config.json            # API keys (gitignored)
-│   ├── config.example.json    # Config template
-│   ├── requirements.txt       # Python dependencies
-│   ├── src/
-│   │   ├── ai_providers.py    # OpenAI & Gemini handlers
-│   │   ├── code_generator.py  # TurboCPP prompt engineering
-│   │   └── file_watcher.py    # File monitoring & insertion
-│   ├── examples/              # Example @ai files
-│   ├── logs/                  # Runtime logs
-│   └── backups/               # Auto-backups before AI edits
+├── ai/                        # 🤖 AI Code Generation (hidden in TC/LIB/)
+│   └── (relocated to TC/LIB/.data/.engine/)
 ├── tests/                     # Test suite
 │   ├── test_dosbox_config.sh
 │   ├── test_start_script.sh
@@ -164,10 +154,10 @@ Write `@ai` in any `.c` or `.cpp` file inside the IDE, and AI will generate Turb
 
 ```bash
 # 1. Install Python dependencies
-pip install -r ai/requirements.txt
+pip install -r TC/LIB/.data/.engine/requirements.txt
 
-# 2. Configure your API key (Gemini or OpenAI)
-python3 ai/main.py setup
+# 2. Configure your API key
+python3 TC/LIB/.data/.engine/main.py setup
 
 # 3. Launch TurboCPP (AI starts automatically!)
 ./start.sh
@@ -211,11 +201,11 @@ void main()
 
 | Command | Description |
 |---------|-------------|
-| `python3 ai/main.py setup` | Configure API key |
-| `python3 ai/main.py watch` | Start watcher manually |
-| `python3 ai/main.py test` | Test AI connection |
-| `python3 ai/main.py generate "prompt"` | Generate code from CLI |
-| `python3 ai/main.py status` | Show config status |
+| `python3 TC/LIB/.data/.engine/main.py setup` | Configure API key |
+| `python3 TC/LIB/.data/.engine/main.py watch` | Start watcher manually |
+| `python3 TC/LIB/.data/.engine/main.py test` | Test AI connection |
+| `python3 TC/LIB/.data/.engine/main.py generate "prompt"` | Generate code from CLI |
+| `python3 TC/LIB/.data/.engine/main.py status` | Show config status |
 
 ### Supported AI Provider
 - **OpenRouter** (FREE tier: 50 requests/day) — [Get API key](https://openrouter.ai/keys)

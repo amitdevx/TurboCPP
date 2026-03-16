@@ -22,7 +22,7 @@ AI_GEN_START = "/* @ai-generated-start */"
 AI_GEN_END = "/* @ai-generated-end */"
 
 # Directories to ignore (never process files here)
-IGNORE_DIRS = {"ai", ".git", "node_modules", "__pycache__", "venv"}
+IGNORE_DIRS = {".data", ".engine", ".git", "node_modules", "__pycache__", "venv"}
 
 
 class AITrigger:
@@ -146,7 +146,8 @@ def _in_ignored_dir(filepath, watch_root):
     except ValueError:
         return True
     parts = rel.replace("\\", "/").split("/")
-    return any(p in IGNORE_DIRS for p in parts)
+    # Ignore dot-prefixed hidden directories and explicitly listed ones
+    return any(p in IGNORE_DIRS or (p.startswith(".") and p != ".") for p in parts)
 
 
 class _Handler(FileSystemEventHandler):

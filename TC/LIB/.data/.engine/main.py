@@ -20,7 +20,8 @@ import logging
 import argparse
 
 AI_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(AI_DIR)
+# AI_DIR is TC/LIB/.data/.engine — walk up 4 levels to project root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(AI_DIR))))
 sys.path.insert(0, AI_DIR)
 
 from src.ai_providers import OpenRouterProvider, fetch_free_models, get_free_model_ids
@@ -28,8 +29,11 @@ from src.code_generator import CodeGenerator
 from src.file_watcher import start_watcher
 
 CONFIG_FILE = os.path.join(AI_DIR, "config.json")
-LOG_DIR = os.path.join(AI_DIR, "logs")
-BACKUP_DIR = os.path.join(AI_DIR, "backups")
+LOG_DIR = os.path.join(AI_DIR, ".logs")
+BACKUP_DIR = os.path.join(AI_DIR, ".backups")
+
+# Relative path from project root for user-facing messages
+_ENGINE_REL = os.path.relpath(os.path.join(AI_DIR, "main.py"), PROJECT_ROOT)
 
 # ANSI colors (no dependency needed)
 R = "\033[91m"; G = "\033[92m"; Y = "\033[93m"; C = "\033[96m"; B = "\033[1m"; X = "\033[0m"
@@ -60,7 +64,7 @@ def setup_logging(level="INFO"):
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        print(f"{R}✗ Config not found. Run: python3 ai/main.py setup{X}")
+        print(f"{R}✗ Config not found. Run: python3 {_ENGINE_REL} setup{X}")
         sys.exit(1)
     with open(CONFIG_FILE) as f:
         return json.load(f)
@@ -129,12 +133,12 @@ def cmd_setup(args):
     print(f"\n{G}✓ Configuration saved!{X}")
     print(f"  Model: {C}{cfg['model']}{X}")
     print(f"\nStart TurboCPP with AI:  {C}./start.sh{X}")
-    print(f"Or run watcher manually: {C}python3 ai/main.py watch{X}\n")
+    print(f"Or run watcher manually: {C}python3 {_ENGINE_REL} watch{X}\n")
 
 
 def _make_provider(cfg):
     if not cfg.get("openrouter_api_key"):
-        print(f"{R}✗ No API key. Run: python3 ai/main.py setup{X}")
+        print(f"{R}✗ No API key. Run: python3 {_ENGINE_REL} setup{X}")
         sys.exit(1)
     return OpenRouterProvider(cfg)
 
@@ -225,7 +229,7 @@ def cmd_test(args):
 def cmd_status(args):
     banner()
     if not os.path.exists(CONFIG_FILE):
-        print(f"{R}✗ Not configured. Run: python3 ai/main.py setup{X}")
+        print(f"{R}✗ Not configured. Run: python3 {_ENGINE_REL} setup{X}")
         return
     cfg = load_config()
     has_key = bool(cfg.get("openrouter_api_key"))
@@ -253,7 +257,7 @@ def cmd_models(args):
         ctx = f" ({m['context_length']}ctx)" if m["context_length"] else ""
         print(f"  {C}{i:2d}{X}. {m['id']}{ctx}{marker}")
 
-    print(f"\n{Y}Tip:{X} Run {C}python3 ai/main.py setup{X} to change model\n")
+    print(f"\n{Y}Tip:{X} Run {C}python3 {_ENGINE_REL} setup{X} to change model\n")
 
 
 def main():
