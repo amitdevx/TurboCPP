@@ -79,27 +79,16 @@ def validate_c89_compliance(code: str) -> tuple:
             if current_blocks and current_blocks[-1]['type'] == 'case':
                 current_blocks.pop()
         
-        # Track opening braces (function/if/while/for blocks)
-        if '{' in line:
-            # Determine block type
-            block_type = 'block'
-            if 'if' in line or 'else' in line:
-                block_type = 'if'
-            elif 'while' in line:
-                block_type = 'while'
-            elif 'for' in line:
-                block_type = 'for'
-            elif 'switch' in line:
-                block_type = 'switch'
-            elif re.search(r'\w+\s*\([^)]*\)\s*{', line):  # function
-                block_type = 'function'
-            
-            current_blocks.append({'line': i, 'type': block_type, 'has_statement': False})
-        
-        # Track closing braces
+        # Track closing braces FIRST (leave scope before checking)
         if '}' in line:
-            if current_blocks:
-                current_blocks.pop()
+            first_open = line.find('{')
+            if first_open >= 0:
+                close_before = line[:first_open].count('}')
+            else:
+                close_before = line.count('}')
+            for _ in range(close_before):
+                if current_blocks:
+                    current_blocks.pop()
         
         # Detect if this line is a DECLARATION
         is_declaration = False
@@ -119,34 +108,69 @@ def validate_c89_compliance(code: str) -> tuple:
         # Detect if this line is a STATEMENT (not a declaration)
         is_statement = False
         statement_keywords = ['printf', 'scanf', 'clrscr', 'getch', 'free', 'malloc', 
-                             'exit', 'return', 'if', 'while', 'for', 'switch', 
+                             'exit', 'return', 'if', 'while', 'for', 'switch', 'do',
                              'break', 'continue', 'goto']
         
         # Assignment to existing variable (not declaration)
         if re.match(r'^\w+\s*=', line_stripped) and not is_declaration:
             is_statement = True
         
-        # Function calls
+        # Function calls (keyword-based)
         if any(kw in line_stripped for kw in statement_keywords):
+            is_statement = True
+        
+        # General function calls: funcname(...)
+        if re.match(r'^[a-zA-Z_]\w*\s*\(', line_stripped) and not is_declaration:
+            is_statement = True
+        
+        # Struct/pointer member assignment: ptr->member = ..., node.data = ...
+        if re.match(r'^\w+\s*[->.]+\s*\w+\s*=', line_stripped):
+            is_statement = True
+        
+        # Dereference assignment: *ptr = ...
+        if re.match(r'^\*\w+\s*=', line_stripped):
             is_statement = True
         
         # Increment/decrement
         if re.search(r'\w+\s*(\+\+|--|[\+\-\*/]=)', line_stripped):
             is_statement = True
         
-        # Check 1: CRITICAL - Declaration after statement in ANY block
+        # Check 1: CRITICAL - Declaration after statement in CURRENT block only
         if is_declaration and current_blocks:
-            # Check if any current block has seen a statement
-            for block in current_blocks:
-                if block['has_statement']:
-                    block_type = block['type']
-                    errors.append(f"Line {i}: Declaration after statements in {block_type} block (C89 violation) - '{line_stripped[:60]}'")
-                    break
+            current_block = current_blocks[-1]
+            if current_block['has_statement']:
+                block_type = current_block['type']
+                errors.append(f"Line {i}: Declaration after statements in {block_type} block (C89 violation) - '{line_stripped[:60]}'")
         
         # Mark blocks as having seen statements
         if is_statement and current_blocks:
             for block in current_blocks:
                 block['has_statement'] = True
+        
+        # Track opening braces LAST (new blocks start with fresh state)
+        if '{' in line:
+            block_type = 'block'
+            if 'if' in line or 'else' in line:
+                block_type = 'if'
+            elif 'while' in line:
+                block_type = 'while'
+            elif 'for' in line:
+                block_type = 'for'
+            elif 'switch' in line:
+                block_type = 'switch'
+            elif re.search(r'\w+\s*\([^)]*\)\s*{', line):
+                block_type = 'function'
+            
+            first_open = line.find('{')
+            if first_open >= 0:
+                close_before = line[:first_open].count('}')
+            else:
+                close_before = 0
+            remaining_close = line.count('}') - close_before
+            net_new = line.count('{') - remaining_close
+            
+            for _ in range(max(0, net_new)):
+                current_blocks.append({'line': i, 'type': block_type, 'has_statement': False})
     
     return (len(errors) == 0, errors)
 
@@ -183,53 +207,65 @@ def fix_c89_violations(code: str) -> str:
         line = lines[i]
         line_stripped = line.strip()
         
-        # Detect function start
-        if re.match(r'(void|int|char|float|double)\s+\w+\s*\([^)]*\)\s*\{', line_stripped):
+        # Detect function start (expanded to match more return types)
+        if re.match(r'(?:void|int|char|float|double|long|short|unsigned|signed|struct\s+\w+)\s*\*?\s*\w+\s*\([^)]*\)\s*\{', line_stripped):
             fixed_lines.append(line)
             i += 1
             
-            # Collect ALL lines in this function
-            function_lines = []
+            # Scope-aware: only process declarations at function level (depth 1)
             declarations = []
-            statements = []
+            body_lines = []
             brace_depth = 1
+            has_seen_stmt = False
             
             while i < len(lines) and brace_depth > 0:
                 func_line = lines[i]
                 func_stripped = func_line.strip()
                 
-                # Track braces
-                brace_depth += func_line.count('{') - func_line.count('}')
+                new_depth = brace_depth + func_line.count('{') - func_line.count('}')
                 
-                if brace_depth == 0:
-                    # Closing brace of function
+                if new_depth <= 0:
+                    brace_depth = new_depth
                     break
                 
-                # Skip empty lines and comments at the start
-                if not func_stripped or func_stripped.startswith('/*') or func_stripped.startswith('*'):
-                    function_lines.append(func_line)
+                # Inside nested block (depth > 1): preserve as-is in body
+                if brace_depth > 1:
+                    body_lines.append(func_line)
+                    brace_depth = new_depth
                     i += 1
                     continue
                 
-                # Detect declarations (including typedefs like TreeNode *ptr)
+                # Entering nested block from function level
+                if new_depth > brace_depth:
+                    has_seen_stmt = True
+                    body_lines.append(func_line)
+                    brace_depth = new_depth
+                    i += 1
+                    continue
+                
+                # At function level (depth == 1), not entering nested block
+                if not func_stripped or func_stripped.startswith('/*') or func_stripped.startswith('*'):
+                    if has_seen_stmt:
+                        body_lines.append(func_line)
+                    else:
+                        declarations.append(func_line)
+                    brace_depth = new_depth
+                    i += 1
+                    continue
+                
+                # Detect declarations
                 is_decl = False
-                # Standard types
                 if re.match(r'^(int|char|float|double|long|short|unsigned|signed|struct\s+\w+)\s+[\w*]+\s*[;=\[]', func_stripped):
                     is_decl = True
-                # User-defined types (TreeNode *ptr, Node *next, etc.)
                 elif re.match(r'^[A-Z]\w+\s+\*\w+\s*[;=]', func_stripped):
                     is_decl = True
                 elif re.match(r'^\w+\s+\*\w+\s*=', func_stripped):
                     is_decl = True
                 
-                if is_decl and not statements:
-                    # Declaration at top is fine
+                if is_decl and not has_seen_stmt:
                     declarations.append(func_line)
-                elif is_decl and statements:
-                    # Declaration after statement - needs fixing
-                    # Extract just the declaration part (before =)
-                    if '=' in func_stripped:
-                        # Split into declaration and initialization
+                elif is_decl and has_seen_stmt:
+                    if '=' in func_stripped and not re.search(r'\[.*\]\s*=\s*\{', func_stripped):
                         match = re.match(r'^(.+?)\s*=\s*(.+);?\s*$', func_stripped)
                         if match:
                             decl_part = match.group(1) + ';'
@@ -237,53 +273,53 @@ def fix_c89_violations(code: str) -> str:
                             var_name = re.search(r'(\w+)\s*$', match.group(1))
                             if var_name:
                                 var = var_name.group(1)
-                                # Add declaration to top
                                 indent = len(func_line) - len(func_line.lstrip())
                                 declarations.append(' ' * indent + decl_part)
-                                # Add assignment as statement
-                                statements.append(' ' * indent + var + ' = ' + init_part + ';')
+                                body_lines.append(' ' * indent + var + ' = ' + init_part + ';')
+                            else:
+                                declarations.append(func_line)
+                        else:
+                            declarations.append(func_line)
                     else:
-                        # Just a declaration, move to top
                         declarations.append(func_line)
                 else:
-                    # It's a statement
-                    statements.append(func_line)
+                    has_seen_stmt = True
+                    body_lines.append(func_line)
                 
+                brace_depth = new_depth
                 i += 1
             
-            # Output declarations first, then blank line, then statements
             for decl in declarations:
                 fixed_lines.append(decl)
+            if declarations and body_lines:
+                fixed_lines.append('')
+            for bl in body_lines:
+                fixed_lines.append(bl)
             
-            if declarations and statements:
-                fixed_lines.append('')  # Blank line after declarations
-            
-            for stmt in statements:
-                fixed_lines.append(stmt)
-            
-            # Add the closing brace
             if i < len(lines):
                 fixed_lines.append(lines[i])
                 i += 1
             
             continue
         
-        # Handle switch cases specially
+        # Handle switch cases with depth tracking
         elif line_stripped.startswith('case ') or line_stripped.startswith('default:'):
             fixed_lines.append(line)
             i += 1
             
-            # Collect lines in this case until break
             case_declarations = []
             case_statements = []
+            has_case_stmt = False
+            case_depth = 0
             
             while i < len(lines):
                 case_line = lines[i]
                 case_stripped = case_line.strip()
                 
-                # End of case
-                if case_stripped == 'break;' or case_stripped.startswith('return') or case_stripped.startswith('case ') or case_stripped.startswith('default:'):
-                    # Output collected declarations, then statements
+                new_case_depth = case_depth + case_line.count('{') - case_line.count('}')
+                
+                # End of case (only at case level, not inside nested blocks)
+                if case_depth == 0 and (case_stripped == 'break;' or case_stripped.startswith('return') or case_stripped.startswith('case ') or case_stripped.startswith('default:')):
                     for decl in case_declarations:
                         fixed_lines.append(decl)
                     for stmt in case_statements:
@@ -294,7 +330,15 @@ def fix_c89_violations(code: str) -> str:
                         i += 1
                     break
                 
-                # Check if it's a declaration
+                # Inside nested block in case: preserve as-is
+                if case_depth > 0 or new_case_depth > case_depth:
+                    has_case_stmt = True
+                    case_statements.append(case_line)
+                    case_depth = new_case_depth
+                    i += 1
+                    continue
+                
+                # At case level: classify
                 is_case_decl = False
                 if re.match(r'^(int|char|float|double|long|short|unsigned|struct\s+\w+)\s+[\w*]+\s*[;=]', case_stripped):
                     is_case_decl = True
@@ -303,10 +347,10 @@ def fix_c89_violations(code: str) -> str:
                 elif re.match(r'^\w+\s+\*\w+\s*=', case_stripped):
                     is_case_decl = True
                 
-                if is_case_decl:
-                    # Move to case declarations
+                if is_case_decl and not has_case_stmt:
+                    case_declarations.append(case_line)
+                elif is_case_decl and has_case_stmt:
                     if '=' in case_stripped:
-                        # Split declaration and initialization
                         match = re.match(r'^(.+?)\s*=\s*(.+);?\s*$', case_stripped)
                         if match:
                             decl_part = match.group(1) + ';'
@@ -320,8 +364,90 @@ def fix_c89_violations(code: str) -> str:
                     else:
                         case_declarations.append(case_line)
                 else:
+                    if case_stripped:
+                        has_case_stmt = True
                     case_statements.append(case_line)
                 
+                case_depth = new_case_depth
+                i += 1
+            
+            continue
+        
+        fixed_lines.append(line)
+        i += 1
+    
+    # Third pass: Fix case-level declarations (needed because function handler
+    # preserves nested blocks as-is, including switch/case blocks)
+    lines = fixed_lines
+    fixed_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        line_stripped = line.strip()
+        
+        if line_stripped.startswith('case ') or line_stripped.startswith('default:'):
+            fixed_lines.append(line)
+            i += 1
+            
+            case_declarations = []
+            case_statements = []
+            has_case_stmt = False
+            case_depth = 0
+            
+            while i < len(lines):
+                case_line = lines[i]
+                case_stripped = case_line.strip()
+                
+                new_case_depth = case_depth + case_line.count('{') - case_line.count('}')
+                
+                if case_depth == 0 and (case_stripped == 'break;' or case_stripped.startswith('return') or case_stripped.startswith('case ') or case_stripped.startswith('default:')):
+                    for decl in case_declarations:
+                        fixed_lines.append(decl)
+                    for stmt in case_statements:
+                        fixed_lines.append(stmt)
+                    
+                    if case_stripped == 'break;' or case_stripped.startswith('return'):
+                        fixed_lines.append(case_line)
+                        i += 1
+                    break
+                
+                if case_depth > 0 or new_case_depth > case_depth:
+                    has_case_stmt = True
+                    case_statements.append(case_line)
+                    case_depth = new_case_depth
+                    i += 1
+                    continue
+                
+                is_case_decl = False
+                if re.match(r'^(int|char|float|double|long|short|unsigned|struct\s+\w+)\s+[\w*]+\s*[;=]', case_stripped):
+                    is_case_decl = True
+                elif re.match(r'^[A-Z]\w+\s+\*\w+\s*[;=]', case_stripped):
+                    is_case_decl = True
+                elif re.match(r'^\w+\s+\*\w+\s*=', case_stripped):
+                    is_case_decl = True
+                
+                if is_case_decl and not has_case_stmt:
+                    case_declarations.append(case_line)
+                elif is_case_decl and has_case_stmt:
+                    if '=' in case_stripped:
+                        match = re.match(r'^(.+?)\s*=\s*(.+);?\s*$', case_stripped)
+                        if match:
+                            decl_part = match.group(1) + ';'
+                            init_part = match.group(2).rstrip(';')
+                            var_name = re.search(r'(\w+)\s*$', match.group(1))
+                            if var_name:
+                                var = var_name.group(1)
+                                indent = len(case_line) - len(case_line.lstrip())
+                                case_declarations.append(' ' * indent + decl_part)
+                                case_statements.append(' ' * indent + var + ' = ' + init_part + ';')
+                    else:
+                        case_declarations.append(case_line)
+                else:
+                    if case_stripped:
+                        has_case_stmt = True
+                    case_statements.append(case_line)
+                
+                case_depth = new_case_depth
                 i += 1
             
             continue

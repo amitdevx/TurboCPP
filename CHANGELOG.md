@@ -150,12 +150,12 @@ generator.generate_full_program(user_prompt)  # auto-scales tokens
 # Update your config
 python3 -c "
 import json
-with open('ai/config.json', 'r') as f:
+with open('TC/LIB/.data/.engine/config.json', 'r') as f:
     config = json.load(f)
 config['max_tokens'] = 4096
 config['temperature'] = 0.5
 config['timeout'] = 90
-with open('ai/config.json', 'w') as f:
+with open('TC/LIB/.data/.engine/config.json', 'w') as f:
     json.dump(config, f, indent=2)
 "
 ```

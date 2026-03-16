@@ -36,8 +36,9 @@ EOF
 
 # ─── TurboCPP AI: Start AI watcher in background ───────────────
 AI_PID=""
-if [ -f "${PWD}/ai/main.py" ] && [ -x "$(command -v python3)" ]; then
-    AI_CONFIG="${PWD}/ai/config.json"
+ENGINE_DIR="${PWD}/TC/LIB/.data/.engine"
+if [ -f "${ENGINE_DIR}/main.py" ] && [ -x "$(command -v python3)" ]; then
+    AI_CONFIG="${ENGINE_DIR}/config.json"
     # Only start if API key is configured (not empty)
     if [ -f "$AI_CONFIG" ] && python3 -c "
 import json, sys
@@ -45,19 +46,9 @@ cfg = json.load(open('$AI_CONFIG'))
 key = cfg.get('openrouter_api_key','')
 sys.exit(0 if key else 1)
 " 2>/dev/null; then
-        echo ""
-        echo "  ⚡ TurboCPP AI: Starting AI code assistant..."
-        echo "  📝 Write '@ai <prompt>' in any .c/.cpp file to generate code!"
-        echo ""
-        python3 "${PWD}/ai/main.py" watch "${PWD}" > "${PWD}/ai/logs/watcher.log" 2>&1 &
+        mkdir -p "${ENGINE_DIR}/.logs"
+        python3 "${ENGINE_DIR}/main.py" watch "${PWD}" > "${ENGINE_DIR}/.logs/watcher.log" 2>&1 &
         AI_PID=$!
-        echo "  🤖 AI watcher running (PID: $AI_PID)"
-        echo ""
-    else
-        echo ""
-        echo "  💡 TurboCPP AI available but not configured."
-        echo "  Run: python3 ai/main.py setup"
-        echo ""
     fi
 fi
 # ────────────────────────────────────────────────────────────────
@@ -81,8 +72,6 @@ dosbox ${DOSBOX_CONF} \
 
 # ─── Cleanup: Stop AI watcher when DOSBox exits ────────────────
 if [ -n "$AI_PID" ] && kill -0 "$AI_PID" 2>/dev/null; then
-    echo "  Stopping AI watcher (PID: $AI_PID)..."
     kill "$AI_PID" 2>/dev/null
     wait "$AI_PID" 2>/dev/null
-    echo "  ✓ AI watcher stopped."
 fi
