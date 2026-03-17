@@ -20,7 +20,6 @@ TC/Projects/*
 start.sh.backup
 
 # TurboCPP AI
-TC/LIB/.data/.engine/config.json
 TC/LIB/.data/.engine/.logs/
 TC/LIB/.data/.engine/.backups/
 TC/LIB/.data/.engine/__pycache__/
