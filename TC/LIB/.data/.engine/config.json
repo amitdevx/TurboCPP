@@ -1,10 +1,14 @@
 {
-    "openrouter_api_key": "YOUR_OPENROUTER_API_KEY_HERE",
-    "model": "meta-llama/llama-3.3-70b-instruct:free",
-    "watch_extensions": [".c", ".cpp", ".h"],
-    "backup_enabled": true,
-    "log_level": "INFO",
-    "max_tokens": 4096,
-    "temperature": 0.5,
-    "timeout": 90
+  "openrouter_api_key": "sk-or-v1-8169b02M25b84f331d1cd10Adc779dc3ee88066c5a11da4f599a64efI1d18775c36T",
+  "model": "meta-llama/llama-3.3-70b-instruct:free",
+  "watch_extensions": [
+    ".c",
+    ".cpp",
+    ".h"
+  ],
+  "backup_enabled": true,
+  "log_level": "INFO",
+  "max_tokens": 4096,
+  "temperature": 0.5,
+  "timeout": 90
 }
