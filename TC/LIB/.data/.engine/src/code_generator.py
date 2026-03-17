@@ -801,6 +801,8 @@ Request: """
 class CodeGenerator:
     """Generates TurboCPP-compatible code using OpenRouter."""
 
+    MAX_AI_RETRIES = 2
+
     def __init__(self, provider: OpenRouterProvider):
         self.provider = provider
 
@@ -825,16 +827,22 @@ class CodeGenerator:
             logger.info("Attempting to auto-fix C89 violations...")
             code = fix_c89_violations(code)
             
-            # Re-validate
+            # Re-validate after auto-fix
             is_valid, errors = validate_c89_compliance(code)
             if not is_valid:
-                logger.error(f"C89 violations remain after fix: {errors}")
-                # Add comment about violations
-                error_comment = "\n/* WARNING: C89 compliance issues detected:\n"
-                for err in errors[:3]:  # Show first 3 errors
-                    error_comment += f" * {err}\n"
-                error_comment += " * Fix: Move ALL variable declarations to top of blocks.\n */\n\n"
-                code = error_comment + code
+                # Auto-fix was insufficient — ask the AI to correct the errors
+                for attempt in range(1, self.MAX_AI_RETRIES + 1):
+                    logger.warning(f"C89 violations remain after auto-fix (attempt {attempt}/{self.MAX_AI_RETRIES}): {errors}")
+                    logger.info("Re-calling AI to fix remaining C89 violations...")
+                    code = self._retry_with_errors(user_prompt, code, errors)
+                    code = fix_c89_violations(code)
+                    is_valid, errors = validate_c89_compliance(code)
+                    if is_valid:
+                        logger.info(f"AI fix succeeded on attempt {attempt}")
+                        break
+                    
+                if not is_valid:
+                    logger.error(f"C89 violations remain after {self.MAX_AI_RETRIES} AI retries: {errors}")
         
         return code
 
@@ -848,13 +856,44 @@ class CodeGenerator:
         code = self.provider.generate_code(context_prompt, TURBOCPP_SYSTEM_PROMPT)
         code = self._clean(code)
         
-        # Validate C89 compliance
+        # Validate and fix C89 compliance
         is_valid, errors = validate_c89_compliance(code)
         if not is_valid:
             logger.warning(f"C89 violations in snippet: {errors}")
             code = fix_c89_violations(code)
+            
+            # Re-validate after auto-fix
+            is_valid, errors = validate_c89_compliance(code)
+            if not is_valid:
+                # Auto-fix was insufficient — ask the AI to correct the errors
+                for attempt in range(1, self.MAX_AI_RETRIES + 1):
+                    logger.warning(f"Snippet C89 violations remain after auto-fix (attempt {attempt}/{self.MAX_AI_RETRIES}): {errors}")
+                    logger.info("Re-calling AI to fix remaining C89 violations in snippet...")
+                    code = self._retry_with_errors(user_prompt, code, errors)
+                    code = fix_c89_violations(code)
+                    is_valid, errors = validate_c89_compliance(code)
+                    if is_valid:
+                        logger.info(f"AI fix succeeded on attempt {attempt}")
+                        break
+                
+                if not is_valid:
+                    logger.error(f"Snippet C89 violations remain after {self.MAX_AI_RETRIES} AI retries: {errors}")
         
         return code
+
+    def _retry_with_errors(self, original_prompt: str, buggy_code: str, errors: list) -> str:
+        """Re-call the AI with the specific C89 violations to get a corrected version."""
+        error_details = "\n".join(f"- {e}" for e in errors[:5])
+        fix_prompt = (
+            f"The following Turbo C++ code has C89 compliance errors that MUST be fixed.\n\n"
+            f"ERRORS TO FIX:\n{error_details}\n\n"
+            f"BUGGY CODE:\n{buggy_code}\n\n"
+            f"Fix ALL the errors listed above and return ONLY the corrected, complete C code. "
+            f"The original request was: {original_prompt}"
+        )
+        logger.info(f"Sending fix request for {len(errors)} error(s) to AI...")
+        code = self.provider.generate_code(fix_prompt, TURBOCPP_SYSTEM_PROMPT)
+        return self._clean(code)
 
     def _clean(self, code: str) -> str:
         if not code:
